@@ -3,7 +3,7 @@
 
 %% public API
 -export([start/1, start_link/1, trade/2, accept_trade/1, 
-         make_offer/2, retract_offer/2, ready/1, cancel/1, set_timer/1]).
+         make_offer/2, retract_offer/2, ready/1, cancel/1, get_timeout/1]).
 %% gen_fsm callbacks
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
          terminate/3, code_change/4,
@@ -67,12 +67,12 @@ accept_negotiate(OtherPid, OwnPid) ->
 
 %% forward a client's offer
 %% ZREFAKTOROWAĆ
-do_offer(OtherPid, {Item, TimeOut}) ->
-    gen_fsm:send_event(OtherPid, {do_offer, {Item, TimeOut}});
-
 %% ZREFAKTOROWAĆ
 do_offer(OtherPid, {offer_expired, Pid}) ->
-    gen_fsm:send_event(OtherPid, {offer_expired, Pid}).
+    gen_fsm:send_event(OtherPid, {offer_expired, Pid});
+
+do_offer(OtherPid, {Item, TimeOut}) ->
+    gen_fsm:send_event(OtherPid, {do_offer, {Item, TimeOut}}).
 
 %% forward a client's offer cancellation
 undo_offer(OtherPid, Item) ->
@@ -171,13 +171,13 @@ idle_wait(Event, _From, Data) ->
 negotiate({make_offer, {Item, TimeOut}}, S=#state{ownitems=OwnItems}) ->
     do_offer(S#state.other, {Item, TimeOut}),
     notice(S, "offering ~p", [Item]),
-    {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}},
+    {next_state, negotiate, S#state{ownitems=add(Item, OwnItems), timer = TimeOut}},
     if
         S#state.timer == undefined ->
-            io:format("Make offer -> TimeOut undefined~n"),
+            % io:format("make_offer -> TimeOut undefined~n"),
             {next_state, negotiate, S#state{ownitems=add(Item, OwnItems), timer = TimeOut}};
         true ->
-            io:format("Make offer -> TimeOut DEFINED~n"),
+            io:format("make_offer -> TimeOut set to ~p ~n", [TimeOut]),
             {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}}
     end;
 
@@ -190,28 +190,26 @@ negotiate({retract_offer, Item}, S=#state{ownitems=OwnItems}) ->
 %% other side offering an item
 %% ZREFAKTOROWAĆ
 negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
-%%    notice(S, "other player offering ~p", [Item]),
-%%    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
     if
         S#state.timer == undefined ->
-            io:format("DO offer -> timeout undefined~n"),
+            % io:format("do_offer -> timeout undefined ~n"),
             {next_state, negotiate, S#state{otheritems=add(Item, OtherItems), timer = TimeOut}};
         true ->
-            io:format("DO offer -> timestamp DEFINED~n"),
-            CurrentTime = trade_fsm:set_timer(0),
+            io:format("do_offer -> TimeOut set to ~p ~n", [TimeOut]),
+            CurrentTime = trade_fsm:get_timeout(0),
             if
                 S#state.timer > CurrentTime ->
-                    io:format("Timestamp good~n"),
+                    io:format("Correct timeout. ~n"),
                     notice(S, "other player offering ~p", [Item]),
                     {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
                 true ->
-                    io:format("Time for response left.~n"),
-                    do_offer(S#state.other, {no_time, S#state.other}),
-                    trade_fsm:terminate(normal,ready, S)
+                    io:format("Offer expired! ~n"),
+                    do_offer(S#state.other, {offer_expired, S#state.other}),
+                    trade_fsm:terminate(normal, ready, S)
             end
     end;
 
-negotiate({do_offer, {no_time, Pid}}, S=#state{}) ->
+negotiate({do_offer, {offer_expired, Pid}}, S=#state{}) ->
     io:format("~n~nTime's up! Cancelling ~n~n~n"),
     trade_fsm:cancel(Pid);
 
@@ -222,11 +220,18 @@ negotiate({undo_offer, Item}, S=#state{otheritems=OtherItems}) ->
 %% Other side has declared itself ready. Our own FSM should tell it to
 %% wait (with not_yet/1).
 negotiate(are_you_ready, S=#state{other=OtherPid}) ->
+    FirstItem = lists:nth(1, S#state.otheritems),
+    if is_tuple(FirstItem) ->
+            FormattedOtherItems = [X || {X, _} <- S#state.otheritems];
+        true ->
+            FormattedOtherItems = S#state.otheritems
+    end,
+
     io:format("Other user ready to trade.~n"),
     notice(S,
            "Other user ready to transfer goods:~n"
            "You get ~p, The other side gets ~p",
-           [S#state.otheritems, S#state.ownitems]),
+           [FormattedOtherItems, S#state.ownitems]),
     not_yet(OtherPid),
     {next_state, negotiate, S};
 negotiate(Event, Data) ->
@@ -241,15 +246,17 @@ negotiate(ready, From, S = #state{other=OtherPid}) ->
     notice(S, "asking if ready, waiting", []),
     {next_state, wait, S#state{from=From}};
 negotiate(Event, _From, S) ->
-    unexpected(Event, negotiate),
-    {next_state, negotiate, S}.
+        unexpected(Event, negotiate),
+        {next_state, negotiate, S}.
+
 
 %% other side offering an item. Don't forget our client is still
 %% waiting for a reply, so let's tell them the trade state changed
 %% and move back to the negotiate state
 wait({do_offer, Item}, S=#state{otheritems=OtherItems}) ->
     gen_fsm:reply(S#state.from, offer_changed),
-    notice(S, "other side offering ~p", [Item]),
+    %% tu wyciagam element z krotki
+    notice(S, "other side offering ~p", [element(1, Item)]),
     {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
 %% other side cancelling an item offer. Don't forget our client is still
 %% waiting for a reply, so let's tell them the trade state changed
@@ -399,7 +406,6 @@ commit(S = #state{}) ->
               "in a database.~n",
               [S#state.name, S#state.ownitems, S#state.otheritems]).
 
-set_timer(Seconds) ->
-    Date_in_seconds = calendar:datetime_to_gregorian_seconds(calendar:now_to_datetime(now())),
-    Timeout = calendar:gregorian_seconds_to_datetime(Date_in_seconds + Seconds),
-    Timeout.
+get_timeout(S) ->
+    TimeOut = calendar:datetime_to_gregorian_seconds(calendar:local_time()) + S,
+    calendar:gregorian_seconds_to_datetime(TimeOut).

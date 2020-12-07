@@ -1,32 +1,63 @@
 -module(trade_calls).
 -compile(export_all).
 
-main_test() ->
+main_test_passing() ->
     S = self(),
-    PidCliA = spawn(fun() -> testA(S) end),
+    PidCliA = spawn(fun() -> receiver_passing(S) end),
     receive PidA -> PidA end,
-    spawn(fun() -> testB(PidA, PidCliA) end).
+    spawn(fun() -> initiator_passing(PidA, PidCliA) end).
 
-testA(Parent) ->
+main_test_failing() ->
+    S = self(),
+    PidCliA = spawn(fun() -> receiver_failing(S) end),
+    receive PidA -> PidA end,
+    spawn(fun() -> initiator_failing(PidA, PidCliA) end).
+
+receiver_passing(Parent) ->
     {ok, Pid} = trade_fsm:start_link("Carl"),
     Parent ! Pid,
-    io:format("Spawned Carl: ~p - buyer ~n", [Pid]),
+    io:format("Spawned Carl: ~p~n", [Pid]),
     timer:sleep(800),
     trade_fsm:accept_trade(Pid),
-    timer:sleep(400),
     timer:sleep(4000),
-    trade_fsm:make_offer(Pid, {"horse", trade_fsm:set_timer(10)}),
+    trade_fsm:make_offer(Pid, {"horse", trade_fsm:get_timeout(10)}),
     timer:sleep(1000),
     trade_fsm:ready(Pid),
     timer:sleep(1000).
 
-testB(PidA, _) ->
+initiator_passing(PidA, _) ->
     {ok, Pid} = trade_fsm:start_link("Jim"),
-    io:format("Spawned Jim: ~p - seller ~n", [Pid]),
+    io:format("Spawned Jim: ~p~n", [Pid]),
     timer:sleep(500),
     trade_fsm:trade(Pid, PidA),
     timer:sleep(500),
-    trade_fsm:make_offer(Pid, {"apple", trade_fsm:set_timer(10)}),
+    trade_fsm:make_offer(Pid, {"sword", trade_fsm:get_timeout(10)}),
+    timer:sleep(5000),
+    trade_fsm:ready(Pid),
+    timer:sleep(200),
+    timer:sleep(1000).
+
+receiver_failing(Parent) ->
+    {ok, Pid} = trade_fsm:start_link("Carl"),
+    Parent ! Pid,
+    io:format("Spawned Carl: ~p~n", [Pid]),
+    timer:sleep(800),
+    trade_fsm:accept_trade(Pid),
+    timer:sleep(4000),
+    trade_fsm:make_offer(Pid, {"horse", trade_fsm:get_timeout(10)}),
+    % czekam 10 sekund, timeout ustawiony jest na 2 sekundy -> bedzie error
+    timer:sleep(10000),
+    trade_fsm:ready(Pid),
+    timer:sleep(1000).
+
+initiator_failing(PidA, _) ->
+    {ok, Pid} = trade_fsm:start_link("Jim"),
+    io:format("Spawned Jim: ~p~n", [Pid]),
+    timer:sleep(500),
+    trade_fsm:trade(Pid, PidA),
+    timer:sleep(500),
+    % ustawiam timeout na 2 sekundy
+    trade_fsm:make_offer(Pid, {"sword", trade_fsm:get_timeout(2)}),
     timer:sleep(5000),
     trade_fsm:ready(Pid),
     timer:sleep(200),

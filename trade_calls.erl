@@ -5,18 +5,18 @@ main_test_passing() ->
     S = self(),
     PidCliA = spawn(fun() -> receiver_passing(S) end),
     receive PidA -> PidA end,
-    spawn(fun() -> initiator_passing(PidA, PidCliA) end).
+    spawn(fun() -> initiator_passing(PidA) end).
 
 main_test_failing() ->
     S = self(),
     PidCliA = spawn(fun() -> receiver_failing(S) end),
     receive PidA -> PidA end,
-    spawn(fun() -> initiator_failing(PidA, PidCliA) end).
+    spawn(fun() -> initiator_failing(PidA) end).
 
 receiver_passing(Parent) ->
     {ok, Pid} = trade_fsm:start_link("Carl"),
     Parent ! Pid,
-    io:format("Spawned Carl: ~p~n", [Pid]),
+    io:format("Spawned Carl (receiver): ~p~n", [Pid]),
     timer:sleep(800),
     trade_fsm:accept_trade(Pid),
     timer:sleep(4000),
@@ -25,9 +25,9 @@ receiver_passing(Parent) ->
     trade_fsm:ready(Pid),
     timer:sleep(1000).
 
-initiator_passing(PidA, _) ->
+initiator_passing(PidA) ->
     {ok, Pid} = trade_fsm:start_link("Jim"),
-    io:format("Spawned Jim: ~p~n", [Pid]),
+    io:format("Spawned Jim (initiator): ~p~n", [Pid]),
     timer:sleep(500),
     trade_fsm:trade(Pid, PidA),
     timer:sleep(500),
@@ -40,7 +40,7 @@ initiator_passing(PidA, _) ->
 receiver_failing(Parent) ->
     {ok, Pid} = trade_fsm:start_link("Carl"),
     Parent ! Pid,
-    io:format("Spawned Carl: ~p~n", [Pid]),
+    io:format("Spawned Carl (receiver): ~p~n", [Pid]),
     timer:sleep(800),
     trade_fsm:accept_trade(Pid),
     timer:sleep(4000),
@@ -50,9 +50,9 @@ receiver_failing(Parent) ->
     trade_fsm:ready(Pid),
     timer:sleep(1000).
 
-initiator_failing(PidA, _) ->
+initiator_failing(PidA) ->
     {ok, Pid} = trade_fsm:start_link("Jim"),
-    io:format("Spawned Jim: ~p~n", [Pid]),
+    io:format("Spawned Jim (initiator): ~p~n", [Pid]),
     timer:sleep(500),
     trade_fsm:trade(Pid, PidA),
     timer:sleep(500),

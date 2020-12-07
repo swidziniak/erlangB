@@ -35,7 +35,7 @@ accept_trade(OwnPid) ->
     gen_fsm:sync_send_event(OwnPid, accept_negotiate).
 
 %% Send an item on the table to be traded
-%% ZREFAKTOROWAĆ
+%% MODYFIKACJA
 make_offer(OwnPid, {Item, TimeOut}) ->
     gen_fsm:send_event(OwnPid, {make_offer, {Item, TimeOut}}).
 
@@ -66,10 +66,10 @@ accept_negotiate(OtherPid, OwnPid) ->
     gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
 
 %% forward a client's offer
-%% ZREFAKTOROWAĆ
-%% ZREFAKTOROWAĆ
+%% MODYFIKACJA
 do_offer(OtherPid, {offer_expired, Pid}) ->
-    gen_fsm:send_event(OtherPid, {offer_expired, Pid});
+    % jeżeli offer_expired cofnij ofertę
+    gen_fsm:send_event(OtherPid, {undo_offer, Pid});
 
 do_offer(OtherPid, {Item, TimeOut}) ->
     gen_fsm:send_event(OtherPid, {do_offer, {Item, TimeOut}}).
@@ -166,7 +166,7 @@ idle_wait(Event, _From, Data) ->
     unexpected(Event, idle_wait),
     {next_state, idle_wait, Data}.
 
-%% ZREFAKTOROWAĆ
+%% MODYFIKACJA
 %% own side offering an item
 negotiate({make_offer, {Item, TimeOut}}, S=#state{ownitems=OwnItems}) ->
     do_offer(S#state.other, {Item, TimeOut}),
@@ -174,7 +174,6 @@ negotiate({make_offer, {Item, TimeOut}}, S=#state{ownitems=OwnItems}) ->
     {next_state, negotiate, S#state{ownitems=add(Item, OwnItems), timer = TimeOut}},
     if
         S#state.timer == undefined ->
-            % io:format("make_offer -> TimeOut undefined~n"),
             {next_state, negotiate, S#state{ownitems=add(Item, OwnItems), timer = TimeOut}};
         true ->
             io:format("make_offer -> TimeOut set to ~p ~n", [TimeOut]),
@@ -188,7 +187,7 @@ negotiate({retract_offer, Item}, S=#state{ownitems=OwnItems}) ->
     {next_state, negotiate, S#state{ownitems=remove(Item, OwnItems)}};
 
 %% other side offering an item
-%% ZREFAKTOROWAĆ
+%% MODYFIKACJA
 negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
     if
         S#state.timer == undefined ->
@@ -226,7 +225,6 @@ negotiate(are_you_ready, S=#state{other=OtherPid}) ->
         true ->
             FormattedOtherItems = S#state.otheritems
     end,
-
     io:format("Other user ready to trade.~n"),
     notice(S,
            "Other user ready to transfer goods:~n"

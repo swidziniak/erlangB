@@ -1,6 +1,37 @@
 -module(trade_calls).
 -compile(export_all).
 
+main_test() ->
+    S = self(),
+    PidCliA = spawn(fun() -> testA(S) end),
+    receive PidA -> PidA end,
+    spawn(fun() -> testB(PidA, PidCliA) end).
+
+testA(Parent) ->
+    {ok, Pid} = trade_fsm:start_link("Carl"),
+    Parent ! Pid,
+    io:format("Spawned Carl: ~p - buyer ~n", [Pid]),
+    timer:sleep(800),
+    trade_fsm:accept_trade(Pid),
+    timer:sleep(400),
+    timer:sleep(4000),
+    trade_fsm:make_offer(Pid, {"horse", trade_fsm:set_timer(10)}),
+    timer:sleep(1000),
+    trade_fsm:ready(Pid),
+    timer:sleep(1000).
+
+testB(PidA, _) ->
+    {ok, Pid} = trade_fsm:start_link("Jim"),
+    io:format("Spawned Jim: ~p - seller ~n", [Pid]),
+    timer:sleep(500),
+    trade_fsm:trade(Pid, PidA),
+    timer:sleep(500),
+    trade_fsm:make_offer(Pid, {"apple", trade_fsm:set_timer(10)}),
+    timer:sleep(5000),
+    trade_fsm:ready(Pid),
+    timer:sleep(200),
+    timer:sleep(1000).
+
 %% test a little bit of everything and also deadlocks on ready state
 %% -- leftover messages possible on race conditions on ready state
 main_ab() ->

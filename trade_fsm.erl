@@ -3,7 +3,7 @@
 
 %% public API
 -export([start/1, start_link/1, trade/2, accept_trade/1, 
-         make_offer/2, retract_offer/2, ready/1, cancel/1]).
+         make_offer/2, retract_offer/2, ready/1, cancel/1, set_timer/1]).
 %% gen_fsm callbacks
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3,
          terminate/3, code_change/4,
@@ -16,7 +16,8 @@
                 ownitems=[],
                 otheritems=[],
                 monitor,
-                from}).
+                from,
+                timer}).
 
 %%% PUBLIC API
 start(Name) ->
@@ -34,8 +35,9 @@ accept_trade(OwnPid) ->
     gen_fsm:sync_send_event(OwnPid, accept_negotiate).
 
 %% Send an item on the table to be traded
-make_offer(OwnPid, Item) ->
-    gen_fsm:send_event(OwnPid, {make_offer, Item}).
+%% ZREFAKTOROWAĆ
+make_offer(OwnPid, {Item, TimeOut}) ->
+    gen_fsm:send_event(OwnPid, {make_offer, {Item, TimeOut}}).
 
 %% Cancel trade offer
 retract_offer(OwnPid, Item) ->
@@ -64,8 +66,13 @@ accept_negotiate(OtherPid, OwnPid) ->
     gen_fsm:send_event(OtherPid, {accept_negotiate, OwnPid}).
 
 %% forward a client's offer
-do_offer(OtherPid, Item) ->
-    gen_fsm:send_event(OtherPid, {do_offer, Item}).
+%% ZREFAKTOROWAĆ
+do_offer(OtherPid, {Item, TimeOut}) ->
+    gen_fsm:send_event(OtherPid, {do_offer, {Item, TimeOut}});
+
+%% ZREFAKTOROWAĆ
+do_offer(OtherPid, {offer_expired, Pid}) ->
+    gen_fsm:send_event(OtherPid, {offer_expired, Pid}).
 
 %% forward a client's offer cancellation
 undo_offer(OtherPid, Item) ->
@@ -159,20 +166,55 @@ idle_wait(Event, _From, Data) ->
     unexpected(Event, idle_wait),
     {next_state, idle_wait, Data}.
 
+%% ZREFAKTOROWAĆ
 %% own side offering an item
-negotiate({make_offer, Item}, S=#state{ownitems=OwnItems}) ->
-    do_offer(S#state.other, Item),
+negotiate({make_offer, {Item, TimeOut}}, S=#state{ownitems=OwnItems}) ->
+    do_offer(S#state.other, {Item, TimeOut}),
     notice(S, "offering ~p", [Item]),
-    {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}};
+    {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}},
+    if
+        S#state.timer == undefined ->
+            io:format("Make offer -> TimeOut undefined~n"),
+            {next_state, negotiate, S#state{ownitems=add(Item, OwnItems), timer = TimeOut}};
+        true ->
+            io:format("Make offer -> TimeOut DEFINED~n"),
+            {next_state, negotiate, S#state{ownitems=add(Item, OwnItems)}}
+    end;
+
 %% Own side retracting an item offer
 negotiate({retract_offer, Item}, S=#state{ownitems=OwnItems}) ->
     undo_offer(S#state.other, Item),
     notice(S, "cancelling offer on ~p", [Item]),
     {next_state, negotiate, S#state{ownitems=remove(Item, OwnItems)}};
+
 %% other side offering an item
-negotiate({do_offer, Item}, S=#state{otheritems=OtherItems}) ->
-    notice(S, "other player offering ~p", [Item]),
-    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
+%% ZREFAKTOROWAĆ
+negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
+%%    notice(S, "other player offering ~p", [Item]),
+%%    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
+    if
+        S#state.timer == undefined ->
+            io:format("DO offer -> timeout undefined~n"),
+            {next_state, negotiate, S#state{otheritems=add(Item, OtherItems), timer = TimeOut}};
+        true ->
+            io:format("DO offer -> timestamp DEFINED~n"),
+            CurrentTime = trade_fsm:set_timer(0),
+            if
+                S#state.timer > CurrentTime ->
+                    io:format("Timestamp good~n"),
+                    notice(S, "other player offering ~p", [Item]),
+                    {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
+                true ->
+                    io:format("Time for response left.~n"),
+                    do_offer(S#state.other, {no_time, S#state.other}),
+                    trade_fsm:terminate(normal,ready, S)
+            end
+    end;
+
+negotiate({do_offer, {no_time, Pid}}, S=#state{}) ->
+    io:format("~n~nTime's up! Cancelling ~n~n~n"),
+    trade_fsm:cancel(Pid);
+
 %% other side retracting an item offer
 negotiate({undo_offer, Item}, S=#state{otheritems=OtherItems}) ->
     notice(S, "Other player cancelling offer on ~p", [Item]),
@@ -357,3 +399,7 @@ commit(S = #state{}) ->
               "in a database.~n",
               [S#state.name, S#state.ownitems, S#state.otheritems]).
 
+set_timer(Seconds) ->
+    Date_in_seconds = calendar:datetime_to_gregorian_seconds(calendar:now_to_datetime(now())),
+    Timeout = calendar:gregorian_seconds_to_datetime(Date_in_seconds + Seconds),
+    Timeout.

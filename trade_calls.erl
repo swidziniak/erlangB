@@ -19,7 +19,7 @@ receiver_passing(Parent) ->
     io:format("Spawned Carl (receiver): ~p~n", [Pid]),
     timer:sleep(800),
     trade_fsm:accept_trade(Pid),
-    timer:sleep(4000),
+    timer:sleep(400),
     trade_fsm:make_offer(Pid, {"horse", trade_fsm:get_timeout(10)}),
     timer:sleep(1000),
     trade_fsm:ready(Pid),
@@ -30,11 +30,10 @@ initiator_passing(PidA) ->
     io:format("Spawned Jim (initiator): ~p~n", [Pid]),
     timer:sleep(500),
     trade_fsm:trade(Pid, PidA),
-    timer:sleep(500),
-    trade_fsm:make_offer(Pid, {"sword", trade_fsm:get_timeout(10)}),
-    timer:sleep(5000),
-    trade_fsm:ready(Pid),
     timer:sleep(200),
+    trade_fsm:make_offer(Pid, {"sword", trade_fsm:get_timeout(10)}),
+    timer:sleep(1000),
+    trade_fsm:ready(Pid),
     timer:sleep(1000).
 
 receiver_failing(Parent) ->

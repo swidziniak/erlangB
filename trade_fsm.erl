@@ -198,7 +198,7 @@ negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
             CurrentTime = trade_fsm:get_timeout(0),
             if
                 S#state.timer > CurrentTime ->
-                    io:format("Correct timeout. ~n"),
+                    io:format("Offer managed before timeout. ~n"),
                     notice(S, "other player offering ~p", [Item]),
                     {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
                 true ->

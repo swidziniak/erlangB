@@ -191,13 +191,12 @@ negotiate({retract_offer, Item}, S=#state{ownitems=OwnItems}) ->
 negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
     if
         S#state.timer == undefined ->
-            % io:format("do_offer -> timeout undefined ~n"),
             {next_state, negotiate, S#state{otheritems=add(Item, OtherItems), timer = TimeOut}};
         true ->
             io:format("do_offer -> TimeOut set to ~p ~n", [TimeOut]),
-            CurrentTime = trade_fsm:get_timeout(0),
+            TimeNow = trade_fsm:get_timeout(0),
             if
-                S#state.timer > CurrentTime ->
+                S#state.timer > TimeNow ->
                     io:format("Offer managed before timeout. ~n"),
                     notice(S, "other player offering ~p", [Item]),
                     {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
@@ -208,14 +207,11 @@ negotiate({do_offer, {Item, TimeOut}}, S=#state{otheritems=OtherItems}) ->
             end
     end;
 
-negotiate({do_offer, {offer_expired, Pid}}, S=#state{}) ->
-    io:format("~n~nTime's up! Cancelling ~n~n~n"),
-    trade_fsm:cancel(Pid);
-
 %% other side retracting an item offer
 negotiate({undo_offer, Item}, S=#state{otheritems=OtherItems}) ->
     notice(S, "Other player cancelling offer on ~p", [Item]),
     {next_state, negotiate, S#state{otheritems=remove(Item, OtherItems)}};
+
 %% Other side has declared itself ready. Our own FSM should tell it to
 %% wait (with not_yet/1).
 negotiate(are_you_ready, S=#state{other=OtherPid}) ->
@@ -253,7 +249,6 @@ negotiate(Event, _From, S) ->
 %% and move back to the negotiate state
 wait({do_offer, Item}, S=#state{otheritems=OtherItems}) ->
     gen_fsm:reply(S#state.from, offer_changed),
-    %% tu wyciagam element z krotki
     notice(S, "other side offering ~p", [element(1, Item)]),
     {next_state, negotiate, S#state{otheritems=add(Item, OtherItems)}};
 %% other side cancelling an item offer. Don't forget our client is still
